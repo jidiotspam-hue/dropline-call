@@ -127,6 +127,51 @@
           </article>
         </div>
 
+        <section class="leaderboard glass" aria-label="Call swear leaderboard">
+          <div class="leaderboard-heading">
+            <div>
+              <span class="eyebrow">CALL LEADERBOARD</span>
+              <h3>Most swears</h3>
+            </div>
+            <span class="leaderboard-caption">LIVE</span>
+          </div>
+          <div class="leaderboard-players">
+            <article class="leaderboard-player" id="leaderLocal">
+              <span class="rank" id="leaderLocalRank">T</span>
+              <div class="leaderboard-identity">
+                <strong id="leaderLocalName">You</strong>
+                <span><b id="leaderLocalTotal">0</b> total</span>
+              </div>
+              <div class="category-counts" aria-label="Your counts by category">
+                <span><b>F</b><i id="leaderLocal-f">0</i></span>
+                <span><b>S</b><i id="leaderLocal-s">0</i></span>
+                <span><b>B</b><i id="leaderLocal-b">0</i></span>
+                <span><b>A</b><i id="leaderLocal-a">0</i></span>
+                <span><b>D</b><i id="leaderLocal-d">0</i></span>
+                <span><b>C</b><i id="leaderLocal-c">0</i></span>
+                <span><b>P</b><i id="leaderLocal-p">0</i></span>
+              </div>
+            </article>
+            <article class="leaderboard-player" id="leaderRemote">
+              <span class="rank" id="leaderRemoteRank">T</span>
+              <div class="leaderboard-identity">
+                <strong id="leaderRemoteName">Friend</strong>
+                <span><b id="leaderRemoteTotal">0</b> total</span>
+              </div>
+              <div class="category-counts" aria-label="Friend counts by category">
+                <span><b>F</b><i id="leaderRemote-f">0</i></span>
+                <span><b>S</b><i id="leaderRemote-s">0</i></span>
+                <span><b>B</b><i id="leaderRemote-b">0</i></span>
+                <span><b>A</b><i id="leaderRemote-a">0</i></span>
+                <span><b>D</b><i id="leaderRemote-d">0</i></span>
+                <span><b>C</b><i id="leaderRemote-c">0</i></span>
+                <span><b>P</b><i id="leaderRemote-p">0</i></span>
+              </div>
+            </article>
+          </div>
+          <p class="category-key">F-word · S-word · B-word · A-word · D-word · C-word · P-word</p>
+        </section>
+
         <div class="call-controls glass">
           <button class="round-control" id="muteButton" aria-label="Mute microphone" title="Mute microphone">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M8 22h8"/></svg>
@@ -145,6 +190,7 @@
     </main>
 
     <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
-    <script src="app.js" type="module"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vosk-browser@0.0.5/dist/vosk.js"></script>
+    <script src="app.js?v=3" type="module"></script>
   </body>
 </html>

@@ -1,3 +1,5 @@
+import { categoryKeys, detectTriggerCategories, triggerPhrases } from "./profanity.js";
+
 const $ = (selector) => document.querySelector(selector);
 
 const homeView = $("#homeView");
@@ -17,14 +19,11 @@ const toastElement = $("#toast");
 const params = new URLSearchParams(location.search);
 const invitedRoom = cleanRoomId(params.get("call") || "");
 const isInvite = Boolean(invitedRoom);
-const LINE_DELAY = 1.45;
-const VOICE_CUT_SECONDS = 1.08;
+const LINE_DELAY = 3.25;
+const RECOGNITION_LATENCY_ALLOWANCE = 1.6;
+const VOICE_CUT_SECONDS = 2.05;
 const MAX_SOUND_SECONDS = 4.0;
-
-const triggers = [
-  "fuck", "fucking", "fucked", "fucker", "motherfucker", "mother fucker", "shit", "shitty",
-  "bitch", "bitches", "ass", "asshole", "bastard", "damn", "dick", "cock", "pussy", "cunt"
-];
+const VOSK_MODEL_URL = "https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-en-us-0.15.tar.gz";
 
 const soundFiles = [
   "anime-girl-voice.mp3",
@@ -46,6 +45,7 @@ let peerReady = false;
 let mediaCall = null;
 let dataConnection = null;
 let rawStream = null;
+let rawSourceNode = null;
 let outgoingStream = null;
 let audioContext = null;
 let micGain = null;
@@ -58,7 +58,13 @@ let soundBag = [];
 let recognition = null;
 let recognitionWanted = false;
 let recognitionRestartTimer = null;
-let seenResultCounts = new Map();
+let handledRecognitionResults = new Map();
+let voskModel = null;
+let voskRecognizer = null;
+let voskProcessor = null;
+let voskSilentGain = null;
+let voskLoading = null;
+let voskUtteranceIndex = 0;
 let inviteUrl = "";
 let roomHostId = "";
 let callStartedAt = 0;
@@ -67,6 +73,84 @@ let meterFrame = null;
 let muted = false;
 let toastTimer = null;
 let acceptIncoming = false;
+let localSwearStats = emptySwearStats();
+let remoteSwearStats = emptySwearStats();
+
+function emptySwearStats() {
+  return { total: 0, categories: Object.fromEntries(categoryKeys.map((key) => [key, 0])) };
+}
+
+function safeSwearStats(value) {
+  const stats = emptySwearStats();
+  for (const key of categoryKeys) {
+    stats.categories[key] = Math.floor(Math.max(0, Math.min(9999, Number(value?.categories?.[key]) || 0)));
+  }
+  stats.total = categoryKeys.reduce((sum, key) => sum + stats.categories[key], 0);
+  return stats;
+}
+
+function resetLeaderboard() {
+  localSwearStats = emptySwearStats();
+  remoteSwearStats = emptySwearStats();
+  renderLeaderboard();
+}
+
+function recordLocalSwear(category) {
+  if (!categoryKeys.includes(category)) return;
+  localSwearStats.categories[category] += 1;
+  localSwearStats.total += 1;
+  renderLeaderboard();
+  sendLocalStats();
+}
+
+function processDetectedCategories(categories, resultKey) {
+  if (!mediaCall) return;
+  const previous = handledRecognitionResults.get(resultKey) || emptySwearStats().categories;
+  const current = Object.fromEntries(categoryKeys.map((key) => [
+    key,
+    categories.filter((category) => category === key).length
+  ]));
+  for (const key of categoryKeys) {
+    const added = Math.max(0, current[key] - (previous[key] || 0));
+    for (let count = 0; count < added; count += 1) {
+      recordLocalSwear(key);
+      rollAudio();
+    }
+  }
+  handledRecognitionResults.set(resultKey, Object.fromEntries(categoryKeys.map((key) => [
+    key,
+    Math.max(previous[key] || 0, current[key])
+  ])));
+}
+
+function sendLocalStats() {
+  if (dataConnection?.open) {
+    dataConnection.send({ type: "swear-stats", stats: localSwearStats });
+  }
+}
+
+function renderLeaderboard() {
+  const localCard = $("#leaderLocal");
+  const remoteCard = $("#leaderRemote");
+  if (!localCard || !remoteCard) return;
+
+  $("#leaderLocalName").textContent = currentName();
+  $("#leaderRemoteName").textContent = $("#remoteName")?.textContent || "Friend";
+  $("#leaderLocalTotal").textContent = localSwearStats.total;
+  $("#leaderRemoteTotal").textContent = remoteSwearStats.total;
+  for (const key of categoryKeys) {
+    $(`#leaderLocal-${key}`).textContent = localSwearStats.categories[key];
+    $(`#leaderRemote-${key}`).textContent = remoteSwearStats.categories[key];
+  }
+
+  const localWins = localSwearStats.total >= remoteSwearStats.total;
+  localCard.style.order = localWins ? 0 : 1;
+  remoteCard.style.order = localWins ? 1 : 0;
+  $("#leaderLocalRank").textContent = localSwearStats.total === remoteSwearStats.total ? "T" : localWins ? "1" : "2";
+  $("#leaderRemoteRank").textContent = localSwearStats.total === remoteSwearStats.total ? "T" : localWins ? "2" : "1";
+  localCard.classList.toggle("leader", localSwearStats.total > remoteSwearStats.total);
+  remoteCard.classList.toggle("leader", remoteSwearStats.total > localSwearStats.total);
+}
 
 function cleanRoomId(value) {
   const raw = String(value || "").trim();
@@ -140,8 +224,7 @@ function initializePeer() {
 async function prepareAudio() {
   if (outgoingStream) return outgoingStream;
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  const RecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!AudioContextClass || !RecognitionClass) {
+  if (!AudioContextClass) {
     throw new Error("This browser is missing live voice support. Open the link in Chrome or Edge.");
   }
 
@@ -158,6 +241,7 @@ async function prepareAudio() {
   audioContext = new AudioContextClass({ latencyHint: "interactive" });
   await audioContext.resume();
   const source = audioContext.createMediaStreamSource(rawStream);
+  rawSourceNode = source;
   micGain = audioContext.createGain();
   const delay = audioContext.createDelay(4);
   lineGain = audioContext.createGain();
@@ -183,54 +267,105 @@ async function prepareAudio() {
     }
   }))).filter(Boolean);
 
-  startRecognition();
+  if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+    startRecognition();
+  } else {
+    startVoskRecognition();
+  }
   return outgoingStream;
 }
 
 function startRecognition() {
   const RecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognitionWanted = true;
-  seenResultCounts.clear();
+  handledRecognitionResults.clear();
   recognition = new RecognitionClass();
   recognition.continuous = true;
   recognition.interimResults = true;
   recognition.lang = "en-US";
-  recognition.maxAlternatives = 1;
+  recognition.maxAlternatives = 5;
 
   recognition.onresult = (event) => {
     for (let index = event.resultIndex; index < event.results.length; index += 1) {
-      const text = event.results[index][0]?.transcript || "";
-      const words = text.toLowerCase().match(/[a-z']+/g) || [];
-      const normalized = ` ${words.join(" ")} `;
-      const counts = new Map();
-      for (const phrase of triggers) {
-        const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        counts.set(phrase, [...normalized.matchAll(new RegExp(`(?<![a-z'])${escaped}(?![a-z'])`, "g"))].length);
+      if (!mediaCall) continue;
+      const result = event.results[index];
+      let categories = [];
+      for (let alternative = 0; alternative < result.length; alternative += 1) {
+        const candidate = detectTriggerCategories(result[alternative]?.transcript);
+        if (candidate.length > categories.length) categories = candidate;
       }
-      const previous = seenResultCounts.get(index) || new Map();
-      for (const word of triggers) {
-        const added = (counts.get(word) || 0) - (previous.get(word) || 0);
-        for (let count = 0; count < added; count += 1) rollAudio();
-      }
-      seenResultCounts.set(index, counts);
-      if (event.results[index].isFinal) {
-        setTimeout(() => seenResultCounts.delete(index), 2000);
-      }
+      processDetectedCategories(categories, `web-${index}`);
     }
   };
   recognition.onerror = (event) => {
     if (["not-allowed", "service-not-allowed"].includes(event.error)) recognitionWanted = false;
+    if (event.error === "network") {
+      recognitionWanted = false;
+      try { recognition.abort(); } catch { /* already stopped */ }
+      startVoskRecognition();
+    }
     if (!["aborted", "no-speech"].includes(event.error)) console.warn("Voice recognition:", event.error);
   };
   recognition.onend = () => {
     if (recognitionWanted && outgoingStream) {
       clearTimeout(recognitionRestartTimer);
       recognitionRestartTimer = setTimeout(() => {
+        handledRecognitionResults.clear();
         try { recognition.start(); } catch { /* already restarting */ }
-      }, 220);
+      }, 350);
     }
   };
   try { recognition.start(); } catch { /* browser can briefly report already started */ }
+}
+
+function startVoskRecognition() {
+  if (voskLoading || voskRecognizer || !rawSourceNode || !audioContext) return voskLoading;
+  if (!window.Vosk) {
+    console.warn("Local voice engine did not load.");
+    return null;
+  }
+
+  setNetwork("Finishing voice setup…");
+  voskLoading = (async () => {
+    try {
+      const model = await window.Vosk.createModel(VOSK_MODEL_URL, -1);
+      if (!outgoingStream || !audioContext || !rawSourceNode) {
+        model.terminate();
+        return;
+      }
+      voskModel = model;
+      const grammar = JSON.stringify(["[unk]", ...triggerPhrases]);
+      voskRecognizer = new model.KaldiRecognizer(audioContext.sampleRate, grammar);
+      voskUtteranceIndex = 0;
+
+      voskRecognizer.on("partialresult", (message) => {
+        const text = message?.result?.partial || "";
+        processDetectedCategories(detectTriggerCategories(text), `vosk-${voskUtteranceIndex}`);
+      });
+      voskRecognizer.on("result", (message) => {
+        const text = message?.result?.text || "";
+        processDetectedCategories(detectTriggerCategories(text), `vosk-${voskUtteranceIndex}`);
+        voskUtteranceIndex += 1;
+      });
+
+      voskProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+      voskSilentGain = audioContext.createGain();
+      voskSilentGain.gain.value = 0;
+      voskProcessor.onaudioprocess = (event) => {
+        try { voskRecognizer?.acceptWaveform(event.inputBuffer); } catch (error) { console.debug(error); }
+      };
+      rawSourceNode.connect(voskProcessor);
+      voskProcessor.connect(voskSilentGain).connect(audioContext.destination);
+      setNetwork(callView.classList.contains("active") ? "Call connected" : "Room open");
+    } catch (error) {
+      console.error("Local voice setup failed", error);
+      setNetwork("Open in Chrome or Edge", "offline");
+      toast("This browser could not finish voice setup. Open the link in Chrome or Edge.", true);
+    } finally {
+      voskLoading = null;
+    }
+  })();
+  return voskLoading;
 }
 
 function shuffledIndexes(length) {
@@ -253,7 +388,7 @@ function rollAudio() {
   const buffer = nextSoundBuffer();
   if (!buffer) return;
   const now = audioContext.currentTime;
-  const startAt = Math.max(now + 0.06, now + LINE_DELAY - 0.7);
+  const startAt = Math.max(now + 0.06, now + LINE_DELAY - RECOGNITION_LATENCY_ALLOWANCE);
   const endAt = startAt + VOICE_CUT_SECONDS;
   const gain = lineGain.gain;
   gain.setValueAtTime(gain.value, Math.max(now, startAt - 0.018));
@@ -350,10 +485,15 @@ function handleDataConnection(connection) {
 function wireDataConnection(connection) {
   connection.on("open", () => {
     connection.send({ type: "profile", name: currentName() });
+    sendLocalStats();
     if (connection.metadata?.name) setRemoteName(connection.metadata.name);
   });
   connection.on("data", (message) => {
     if (message?.type === "profile" && message.name) setRemoteName(message.name);
+    if (message?.type === "swear-stats") {
+      remoteSwearStats = safeSwearStats(message.stats);
+      renderLeaderboard();
+    }
   });
 }
 
@@ -372,6 +512,7 @@ function wireMediaCall(call, fallbackName) {
 }
 
 function setCallView(friendName) {
+  resetLeaderboard();
   $("#localName").textContent = currentName();
   $("#localAvatar").textContent = initials(currentName());
   setRemoteName(friendName);
@@ -384,6 +525,7 @@ function setRemoteName(name) {
   const safeName = String(name || "Friend").slice(0, 28);
   $("#remoteName").textContent = safeName;
   $("#remoteAvatar").textContent = initials(safeName);
+  renderLeaderboard();
 }
 
 function connectRemoteMeter(stream) {
@@ -460,6 +602,18 @@ function stopAudio() {
     try { recognition.abort(); } catch { /* already stopped */ }
   }
   recognition = null;
+  if (voskProcessor) {
+    try { rawSourceNode?.disconnect(voskProcessor); } catch { /* already disconnected */ }
+    try { voskProcessor.disconnect(); } catch { /* already disconnected */ }
+  }
+  try { voskSilentGain?.disconnect(); } catch { /* already disconnected */ }
+  try { voskModel?.terminate(); } catch { /* already stopped */ }
+  voskProcessor = null;
+  voskSilentGain = null;
+  voskRecognizer = null;
+  voskModel = null;
+  voskLoading = null;
+  rawSourceNode = null;
   rawStream?.getTracks().forEach((track) => track.stop());
   outgoingStream?.getTracks().forEach((track) => track.stop());
   if (audioContext && audioContext.state !== "closed") audioContext.close();
@@ -488,6 +642,7 @@ function finishCall(message = "Call ended.") {
   cancelAnimationFrame(meterFrame);
   callStartedAt = 0;
   muted = false;
+  resetLeaderboard();
   setView(homeView);
   setNetwork("Ready for a private call");
   history.replaceState({}, "", location.pathname);

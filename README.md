@@ -19,7 +19,9 @@ This repository includes a GitHub Pages workflow. Push the `main` branch to GitH
 ## Browser notes
 
 - Chrome or Edge is recommended on desktop.
-- This build uses the browser's speech-recognition service; depending on the browser, recognition audio may be processed by that browser vendor rather than fully on-device.
+- The app uses the browser's speech-recognition service when it is available. Depending on the browser, recognition audio may be processed by that browser vendor.
+- If that service reports a network failure or is unavailable, the app automatically loads a roughly 39 MB Vosk English model and runs recognition locally in a Web Worker. The model is cached by the browser after the first download.
+- Per-category and total counts are exchanged directly between the two browsers over the PeerJS data connection and reset for each call.
 - Both people must leave the tab open for the duration of the call.
 - Peer-to-peer WebRTC can be blocked by unusually restrictive school, office, hotel, or carrier networks because this static build has no dedicated TURN relay.
 - The public PeerJS broker is convenient for a personal project, but a production service should run its own signaling service and TURN relay.
@@ -27,7 +29,8 @@ This repository includes a GitHub Pages workflow. Push the `main` branch to GitH
 ## Files
 
 - `index.html` — all three UI states: lobby, waiting room, and active call
-- `app.js` — PeerJS/WebRTC call logic and outgoing audio processing
+- `app.js` — PeerJS/WebRTC call logic, delayed outgoing audio processing, fallback speech engine, and synchronized leaderboard
+- `profanity.js` — transcript matching and leaderboard categorization
 - `styles.css` — responsive desktop/mobile interface
 - `assets/` — the requested sound clips
 - `.github/workflows/pages.yml` — GitHub Pages deployment
