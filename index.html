@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b0e14" />
+    <meta name="description" content="A focused, private voice room for two." />
+    <title>Dropline — private voice rooms</title>
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="noise"></div>
+    <main class="app-shell">
+      <nav class="topbar">
+        <a class="brand" href="./" aria-label="Dropline home">
+          <span class="brand-mark"><i></i><i></i><i></i></span>
+          <span>dropline</span>
+        </a>
+        <div class="top-status">
+          <span class="status-dot" id="networkDot"></span>
+          <span id="networkLabel">Starting secure line…</span>
+        </div>
+      </nav>
+
+      <section class="view view-home active" id="homeView">
+        <div class="hero-copy">
+          <span class="eyebrow">PRIVATE VOICE · TWO PEOPLE</span>
+          <h1>Call without<br /><em>the clutter.</em></h1>
+          <p>Open a room, share one link, and talk. No account, no server full of channels, no setup spiral.</p>
+          <div class="privacy-note">
+            <span class="shield-icon">◇</span>
+            <span>No account to create. Nothing complicated to configure.</span>
+          </div>
+        </div>
+
+        <div class="join-card glass">
+          <div class="card-glow"></div>
+          <div class="card-heading">
+            <span class="mini-orb"></span>
+            <div>
+              <p class="label">READY WHEN YOU ARE</p>
+              <h2 id="cardTitle">Start a voice room</h2>
+            </div>
+          </div>
+
+          <label class="field-label" for="displayName">Your display name</label>
+          <div class="text-field">
+            <input id="displayName" maxlength="28" autocomplete="nickname" placeholder="What should your friend see?" />
+            <span class="field-icon">↗</span>
+          </div>
+
+          <button class="primary-button" id="primaryAction" disabled>
+            <span id="primaryLabel">Start a room</span>
+            <span class="button-arrow">→</span>
+          </button>
+
+          <div class="divider"><span>or join with a room link</span></div>
+
+          <form class="room-form" id="roomForm">
+            <div class="text-field compact">
+              <input id="roomInput" aria-label="Room link or code" placeholder="Paste room link or code" />
+            </div>
+            <button class="secondary-button" type="submit">Join</button>
+          </form>
+          <p class="fine-print">Use Chrome or Edge for the smoothest experience.</p>
+        </div>
+      </section>
+
+      <section class="view view-waiting" id="waitingView">
+        <div class="waiting-stage">
+          <div class="signal-rings" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div class="avatar large" id="waitingAvatar">Y</div>
+          <span class="eyebrow">ROOM IS OPEN</span>
+          <h1>Waiting for your friend<span class="animated-dots"></span></h1>
+          <p>Keep this page open. The line will connect as soon as they join.</p>
+
+          <div class="invite-box glass">
+            <div>
+              <span class="field-label">INVITE LINK</span>
+              <strong id="invitePreview">Preparing your link…</strong>
+            </div>
+            <button class="copy-button" id="copyInvite">Copy link</button>
+          </div>
+          <button class="text-button" id="cancelWaiting">Close room</button>
+        </div>
+      </section>
+
+      <section class="view view-call" id="callView">
+        <header class="call-header">
+          <div>
+            <span class="eyebrow">VOICE ROOM</span>
+            <h2>One-to-one call</h2>
+          </div>
+          <div class="call-clock"><span class="live-pulse"></span><span id="callTimer">00:00</span></div>
+        </header>
+
+        <div class="people-grid">
+          <article class="person-card local-person">
+            <div class="person-status"><span>YOU</span><i class="speaking-light" id="localSpeaking"></i></div>
+            <div class="portrait-wrap">
+              <div class="portrait-halo"></div>
+              <div class="avatar xlarge" id="localAvatar">Y</div>
+            </div>
+            <h3 id="localName">You</h3>
+            <p id="localState">Connected</p>
+            <div class="waveform" id="localWave" aria-hidden="true"></div>
+          </article>
+
+          <div class="connection-bridge" aria-hidden="true">
+            <span></span><i>↔</i><span></span>
+          </div>
+
+          <article class="person-card remote-person">
+            <div class="person-status"><span>FRIEND</span><i class="speaking-light active" id="remoteSpeaking"></i></div>
+            <div class="portrait-wrap">
+              <div class="portrait-halo violet"></div>
+              <div class="avatar xlarge violet" id="remoteAvatar">F</div>
+            </div>
+            <h3 id="remoteName">Friend</h3>
+            <p id="remoteState">Connecting audio…</p>
+            <div class="waveform violet-wave" id="remoteWave" aria-hidden="true"></div>
+          </article>
+        </div>
+
+        <div class="call-controls glass">
+          <button class="round-control" id="muteButton" aria-label="Mute microphone" title="Mute microphone">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M8 22h8"/></svg>
+          </button>
+          <button class="round-control" id="callInviteButton" aria-label="Copy invite link" title="Copy invite link">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          </button>
+          <button class="end-control" id="endCallButton" aria-label="End call" title="End call">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 15.5c4.8-4.3 10.2-4.3 15 0l-2.7 3.2-3-2.1a13 13 0 0 0-3.6 0l-3 2.1-2.7-3.2Z"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <div class="toast" id="toast" role="status"></div>
+      <audio id="remoteAudio" autoplay playsinline></audio>
+    </main>
+
+    <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
