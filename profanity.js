@@ -1,19 +1,48 @@
-export const triggerPhrases = [
-  "fuck", "fucking", "fucked", "fucker", "motherfucker", "mother fucker", "shit", "shitty",
-  "bitch", "bitches", "ass", "asshole", "bastard", "damn", "dick", "cock", "pussy", "cunt"
-];
-
-export const categoryKeys = ["f", "s", "b", "a", "d", "c", "p"];
-
-const exactWordCategories = new Map([
-  ["fuck", "f"], ["fucking", "f"], ["fucked", "f"], ["fucker", "f"], ["motherfucker", "f"],
-  ["shit", "s"], ["shitty", "s"],
-  ["bitch", "b"], ["bitches", "b"], ["bastard", "b"],
-  ["ass", "a"], ["asshole", "a"],
-  ["damn", "d"], ["dick", "d"],
-  ["cock", "c"], ["cunt", "c"],
-  ["pussy", "p"]
+const categoryWordGroups = new Map([
+  ["f", [
+    "fuck", "fucks", "fucked", "fucking", "fuckin", "fucker", "fuckers", "fuckery",
+    "fuckhead", "fuckheads", "fuckface", "fuckwit", "fuckboy", "fucktard", "fuckup", "fuckups",
+    "motherfuck", "motherfucker", "motherfuckers", "motherfucking", "motherfuckin",
+    "mothafucka", "mothafucker", "clusterfuck", "fuk", "fuq", "wtf", "stfu"
+  ]],
+  ["s", [
+    "shit", "shits", "shite", "shitty", "shittier", "shittiest", "shitting", "shittin",
+    "shitter", "shitters", "shithead", "shitheads", "shithole", "shitshow", "shitstorm",
+    "shitface", "shitbag", "shitpost", "shitposting",
+    "bullshit", "bullshitting", "bullshitter", "horseshit", "dogshit", "batshit",
+    "dipshit", "apeshit"
+  ]],
+  ["b", [
+    "bitch", "bitches", "bitching", "bitchin", "bitchy", "bitchass",
+    "bastard", "bastards", "sonofabitch"
+  ]],
+  ["a", [
+    "ass", "asses", "asshole", "assholes", "asshat", "assclown", "asswipe", "assface",
+    "dumbass", "dumbasses", "jackass", "jackasses", "badass", "smartass", "fatass",
+    "hardass", "kickass", "arse", "arses", "arsehole", "arseholes"
+  ]],
+  ["d", [
+    "damn", "damns", "damned", "damning", "damnit", "dammit",
+    "goddamn", "goddamned", "goddammit", "goddamnit",
+    "dick", "dicks", "dickhead", "dickheads", "dickwad", "dickish",
+    "douche", "douches", "douchebag", "douchebags"
+  ]],
+  ["c", [
+    "cock", "cocks", "cockhead", "cocksucker", "cocksuckers",
+    "cunt", "cunts", "cunty", "crap", "craps", "crappy", "crapped", "crapping"
+  ]],
+  ["p", [
+    "pussy", "pussies", "piss", "pissed", "pisses", "pissing", "pissin", "prick", "pricks"
+  ]]
 ]);
+
+export const categoryKeys = [...categoryWordGroups.keys()];
+
+export const triggerPhrases = [...categoryWordGroups.values()].flat();
+
+const exactWordCategories = new Map(
+  [...categoryWordGroups].flatMap(([category, words]) => words.map((word) => [word, category]))
+);
 
 const specialCategoryPatterns = new Map([
   ["f", [
@@ -61,7 +90,7 @@ export function detectTriggerCategories(transcript) {
   const categories = [];
   const words = raw.match(/[a-z']+/g) || [];
   for (const word of words) {
-    const category = exactWordCategories.get(word);
+    const category = exactWordCategories.get(word.replace(/^'+|'+$/g, ""));
     if (category) categories.push(category);
   }
 

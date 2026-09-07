@@ -1,4 +1,4 @@
-import { categoryKeys, detectTriggerCategories, triggerPhrases } from "./profanity.js";
+import { categoryKeys, detectTriggerCategories } from "./profanity.js";
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -55,6 +55,7 @@ let remoteAnalysisNode = null;
 let mediaDestination = null;
 let soundBuffers = [];
 let soundBag = [];
+let lineOpenAt = 0;
 let recognition = null;
 let recognitionWanted = false;
 let recognitionRestartTimer = null;
@@ -334,8 +335,7 @@ function startVoskRecognition() {
         return;
       }
       voskModel = model;
-      const grammar = JSON.stringify(["[unk]", ...triggerPhrases]);
-      voskRecognizer = new model.KaldiRecognizer(audioContext.sampleRate, grammar);
+      voskRecognizer = new model.KaldiRecognizer(audioContext.sampleRate);
       voskUtteranceIndex = 0;
 
       voskRecognizer.on("partialresult", (message) => {
@@ -345,6 +345,7 @@ function startVoskRecognition() {
       voskRecognizer.on("result", (message) => {
         const text = message?.result?.text || "";
         processDetectedCategories(detectTriggerCategories(text), `vosk-${voskUtteranceIndex}`);
+        handledRecognitionResults.delete(`vosk-${voskUtteranceIndex}`);
         voskUtteranceIndex += 1;
       });
 
@@ -388,13 +389,21 @@ function rollAudio() {
   const buffer = nextSoundBuffer();
   if (!buffer) return;
   const now = audioContext.currentTime;
+  const clipSeconds = Math.min(MAX_SOUND_SECONDS, buffer.duration);
   const startAt = Math.max(now + 0.06, now + LINE_DELAY - RECOGNITION_LATENCY_ALLOWANCE);
-  const endAt = startAt + VOICE_CUT_SECONDS;
+  const endAt = Math.max(startAt + Math.max(VOICE_CUT_SECONDS, clipSeconds), lineOpenAt);
   const gain = lineGain.gain;
-  gain.setValueAtTime(gain.value, Math.max(now, startAt - 0.018));
-  gain.linearRampToValueAtTime(0, startAt);
+  const alreadyCut = lineOpenAt > startAt;
+  gain.cancelScheduledValues(Math.max(now, startAt - 0.02));
+  if (!alreadyCut) {
+    gain.setValueAtTime(gain.value, Math.max(now, startAt - 0.018));
+    gain.linearRampToValueAtTime(0, startAt);
+  } else {
+    gain.setValueAtTime(0, Math.max(now, startAt - 0.018));
+  }
   gain.setValueAtTime(0, endAt - 0.018);
   gain.linearRampToValueAtTime(1, endAt);
+  lineOpenAt = endAt;
 
   const clip = audioContext.createBufferSource();
   const clipGain = audioContext.createGain();
@@ -403,7 +412,7 @@ function rollAudio() {
   clip.connect(clipGain).connect(outgoingStreamDestination());
   clipGain.connect(audioContext.destination);
   clip.start(startAt);
-  clip.stop(startAt + Math.min(MAX_SOUND_SECONDS, buffer.duration));
+  clip.stop(startAt + clipSeconds);
 }
 
 function outgoingStreamDestination() {
@@ -627,6 +636,8 @@ function stopAudio() {
   remoteAnalysisNode = null;
   soundBuffers = [];
   soundBag = [];
+  lineOpenAt = 0;
+  handledRecognitionResults.clear();
 }
 
 function finishCall(message = "Call ended.") {
